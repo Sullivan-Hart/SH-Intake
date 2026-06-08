@@ -283,6 +283,14 @@
    Schema v2.0 §9 so the export is a drop-in for the existing
    TXT -> YAML derivation. Registration intake only (banking is separate).
 
+   2026Jun08 — YAML generator pass (toYAML): the emitted draft now includes
+   the §4 fields the form already collected but previously dropped — pep,
+   business_holdings, dependents, mailing_address (+ address.time_at_address
+   and mailing_same_as_residential), and wealth.real_estate_holdings /
+   primary_non_real_estate_assets / banking_reference. onboarding is now
+   nested under client (client.onboarding) and the sign-off is folded into
+   client.onboarding.declarations_signed. Client-facing fields unchanged.
+
    -------------------------------------------------------------------
    PER-CLIENT CONFIG  — Ariel: edit ONLY this block for each client.
    -------------------------------------------------------------------
@@ -919,13 +927,16 @@ function toYAML(pairs){
   const pob=[get("Client_Place_of_Birth_City"),get("Client_Place_of_Birth_Country")].filter(Boolean).join(", ");
   if(pob) L.push(`  place_of_birth: ${q(pob)}`);
   ci("Client_Sex","sex"); ci("Client_Marital_Status","marital_status");
+  { const dep=get("Client_Dependents"); if(dep!==null&&dep!=="") L.push(`  dependents: ${parseInt(dep,10)||0}`); } // §4
   if(get("Client_Nationality")) L.push(`  citizenship: [${q(get("Client_Nationality"))}]`);
   if(get("Client_US_Person")) L.push(`  us_person: ${get("Client_US_Person")==="Yes"?"true":"false"}   # derived`);
   // tax residency array
   const tr=[]; let i=1; while(get(`Client_TaxRes_Country_${i}`)){ tr.push(`    - {country: ${q(get(`Client_TaxRes_Country_${i}`))}, tin: ${q(get(`Client_TaxRes_TIN_${i}`)||"")}}`); i++; }
   if(tr.length){ L.push(`  tax_residency:`); L.push(...tr); }
   if(get("Client_Passport_Number")){ L.push(`  passport: {number: ${q(get("Client_Passport_Number"))}, expiry: ${q(get("Client_Passport_Expiry")||"")}, issuing_country: ${q(get("Client_Passport_Issuing_Country")||"")}}`); }
-  L.push(`  address: {street: ${q(get("Client_Street")||"")}, city: ${q(get("Client_City")||"")}, state_province: ${q(get("Client_State_Province")||"")}, postal_code: ${q(get("Client_Postal_Code")||"")}, country: ${q(get("Client_Country")||"")}}`);
+  const _msr=get("Client_Mailing_Different")==="No"?"true":(get("Client_Mailing_Different")==="Yes"?"false":"null");
+  L.push(`  address: {street: ${q(get("Client_Street")||"")}, city: ${q(get("Client_City")||"")}, state_province: ${q(get("Client_State_Province")||"")}, postal_code: ${q(get("Client_Postal_Code")||"")}, country: ${q(get("Client_Country")||"")}, time_at_address: ${q(get("Client_Length_at_Address")||"")}, mailing_same_as_residential: ${_msr}}`);
+  if(get("Client_Mailing_Different")==="Yes") L.push(`  mailing_address: {street: ${q(get("Client_Mailing_Street")||"")}, city: ${q(get("Client_Mailing_City")||"")}, state_province: ${q(get("Client_Mailing_State_Province")||"")}, postal_code: ${q(get("Client_Mailing_Postal_Code")||"")}, country: ${q(get("Client_Mailing_Country")||"")}}`); // §4
   L.push(`  contact: {email_primary: ${q(get("Client_Email")||"")}, phone: ${q(get("Client_Telephone")||"")}}`);
   ci("Client_Occupation","occupation"); ci("Client_Title","title"); ci("Client_Company_Name","employer"); ci("Client_Employment_Sector","employer_sector");
   // wealth
@@ -934,6 +945,9 @@ function toYAML(pairs){
   if(get("Income_Bracket")) L.push(`    income_bracket: ${q(get("Income_Bracket"))}`);
   const isrc=pairs.filter(([k])=>k==="Income_Sources").map(([,v])=>q(v));
   if(isrc.length) L.push(`    income_sources: [${isrc.join(", ")}]`);
+  if(get("Real_Estate_Holdings")) L.push(`    real_estate_holdings: ${q(get("Real_Estate_Holdings"))}`); // §4
+  if(get("Primary_Non_Real_Estate_Assets")) L.push(`    primary_non_real_estate_assets: ${q(get("Primary_Non_Real_Estate_Assets"))}`); // §4
+  { const brN=get("Client_Bank_Reference_Name"), brB=get("Client_Bank_Reference_Bank_Name"), brC=get("Client_Bank_Reference_Contact"); if(brN||brB||brC) L.push(`    banking_reference: {bank_name: ${q(brB||"")}, contact_name: ${q(brN||"")}, contact: ${q(brC||"")}}`); } // §4
   if(get("Source_of_Wealth_Description")) L.push(`    source_of_wealth_description: ${q(get("Source_of_Wealth_Description"))}   # §6 (approved)`);
   if(get("Countries_of_Wealth")) L.push(`    countries_of_wealth: [${q(get("Countries_of_Wealth"))}]   # §6 (approved)`);
   if(get("Countries_of_Income")) L.push(`    countries_of_income: [${q(get("Countries_of_Income"))}]   # §6 (approved)`);
@@ -959,8 +973,37 @@ function toYAML(pairs){
       L.push(`      roles: []   # assigned by firm once determined`);
     });
   }
-  L.push(`onboarding: {intake_form_version: "v3", intake_date: ${q(ymdToday())}}`);
-  L.push(`declaration: {agreed: ${get("Declaration_Agreed")==="Yes"?"true":"false"}, signed_name: ${q(get("Declaration_Signature_Name")||"")}, date: ${q(get("Declaration_Date")||ymdToday())}}`);
+  // business holdings (§4)
+  { const biz=[]; let bi=1;
+    while(get(`Business${bi}_Name`)!==null && get(`Business${bi}_Name`)!==""){
+      biz.push(`    - name: ${q(get(`Business${bi}_Name`))}`);
+      biz.push(`      type_of_business: ${q(get(`Business${bi}_Type`)||"")}`);
+      biz.push(`      location: ${q(get(`Business${bi}_Location`)||"")}`);
+      biz.push(`      ownership_pct: ${q(get(`Business${bi}_Ownership_Pct`)||"")}`);
+      biz.push(`      ownership_structure: ${q(get(`Business${bi}_Ownership_Structure`)||"")}`);
+      biz.push(`      estimated_value: ${q(get(`Business${bi}_Estimated_Value`)||"")}`);
+      bi++;
+    }
+    if(biz.length){ L.push(`  business_holdings:`); L.push(...biz); }
+  }
+  // PEP (§4)
+  if(get("Client_PEP")==="Yes"){
+    L.push(`  pep:`);
+    L.push(`    flag: true`);
+    L.push(`    name: ${q(get("Client_PEP_Name")||"")}`);
+    L.push(`    country: ${q(get("Client_PEP_Country")||"")}`);
+    L.push(`    job_title: ${q(get("Client_PEP_Position")||"")}`);
+    L.push(`    relationship: ${q(get("Client_PEP_Relationship")||"")}`);
+    L.push(`    period: ${q(get("Client_PEP_Period")||"")}`);
+  } else if(get("Client_PEP")==="No"){
+    L.push(`  pep: {flag: false}`);
+  }
+  // onboarding (§4 client.onboarding) — declaration folded in
+  L.push(`  onboarding:`);
+  L.push(`    intake_date: ${q(get("Declaration_Date")||ymdToday())}`);
+  L.push(`    intake_form_version: "v3"`);
+  L.push(`    declarations_signed: ${get("Declaration_Agreed")==="Yes"?"true":"false"}`);
+  L.push(`    signed_name: ${q(get("Declaration_Signature_Name")||"")}`);
   return L.join("\n");
 }
 
