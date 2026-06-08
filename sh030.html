@@ -100,6 +100,8 @@
     outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(184,150,46,.16);
   }
   input.invalid, select.invalid, textarea.invalid{border-color:var(--err); background:var(--err-bg);}
+  .na-pill{display:inline-flex; margin-top:8px;}
+  input.na-off{background:#f2f2f2; color:#9a9a9a;}
   fieldset.fs-bad .opts{outline:2px solid var(--err); outline-offset:6px; border-radius:6px;}
   .opt-pill.pill-bad label{border-color:var(--err); background:var(--err-bg);}
   select{appearance:none; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round'/></svg>");
@@ -341,6 +343,19 @@ function fieldText(name, label, o={}){
       ${o.placeholder?`placeholder="${esc(o.placeholder)}"`:''} ${o.attr||''}>
   </div>`;
 }
+function fieldTextNA(name, label, naLabel, o={}){
+  // required text field, with a "none / not applicable" checkbox that exempts it
+  const naId = idOf(name+"_None");
+  return `<div class="field${o.half===false?' full':''}">
+    <label class="lbl" for="${idOf(name)}">${esc(label)}${star(true)}</label>
+    ${o.help?`<span class="help">${esc(o.help)}</span>`:''}
+    <input type="${o.type||'text'}" id="${idOf(name)}" name="${name}" data-req="1" data-label="${esc(label)}"
+      ${o.placeholder?`placeholder="${esc(o.placeholder)}"`:''}>
+    <span class="opt-pill na-pill">
+      <input type="checkbox" id="${naId}" name="${name}_None" value="Yes" data-naof="${name}">
+      <label for="${naId}">${TICK}${esc(naLabel)}</label></span>
+  </div>`;
+}
 function fieldArea(name, label, o={}){
   return `<div class="field full">
     <label class="lbl" for="${idOf(name)}">${esc(label)}${star(o.req)}</label>
@@ -410,7 +425,7 @@ function personBlock(prefix, o={}){
     h += `<p class="help" style="margin-top:-4px">We'll work out their exact role in the structure with you once the file is set up. For now we just need the basics.</p>`+
       `<div class="grid">`+
       fieldText(prefix+"_Relationship_to_Primary","Relationship to the primary client",
-        {req:true, half:false, placeholder:"e.g. Parent, Adult child, Relative, Business partner"})+
+        {req:true, half:false, placeholder:"e.g. spouse / domestic partner / adult child / parent / relative / other"})+
       fieldRadio(prefix+"_Equal_Powers","Will this person have equal powers and responsibilities to the primary client?",
         ["Yes","No"],{req:true, half:false})+
       fieldRadio(prefix+"_Copy_Correspondence","Should this person be copied on all correspondence?",
@@ -419,7 +434,7 @@ function personBlock(prefix, o={}){
   }
   h += `<div class="subhead">Identity</div><div class="grid">`+
     fieldText(prefix+"_First_Name","First name",{req:true})+
-    fieldText(prefix+"_Middle_Name","Middle name(s)")+
+    fieldTextNA(prefix+"_Middle_Name","Middle name(s)","I have no middle name",{help:"As it appears on your passport."})+
     fieldText(prefix+"_Last_Name","Last name",{req:true})+
     fieldText(prefix+"_Preferred_Name","Preferred name",{help:"What we should call you, if different"})+
     fieldDate(prefix+"_Date_of_Birth","Date of birth",{req:true, adult:(o.adultDOB!==false)})+
@@ -476,7 +491,7 @@ function personBlock(prefix, o={}){
   h += `<div class="grid" data-addrblock="${prefix}">`+
     fieldText(prefix+"_Street","Street address",{req:true, half:false})+
     fieldText(prefix+"_City","City / town",{req:true})+
-    fieldText(prefix+"_State_Province","State / province")+
+    fieldTextNA(prefix+"_State_Province","State / province","My address has no state or province")+
     fieldText(prefix+"_Postal_Code","Postal / ZIP code",{req:true})+
     fieldCountry(prefix+"_Country","Country",{req:true})+
     fieldText(prefix+"_Length_at_Address","How long at this address?",{placeholder:"e.g. 6 years"})+
@@ -609,8 +624,8 @@ if (CONFIG.showSpouse){
 }
 
 /* Module C — Additional Adult Parties (repeatable) */
-html += sec("Additional Parties", "other adults in the structure",
-  `<p class="lede">Add each additional adult connected to the structure — for example a family member or business associate who will be involved. (Leave empty if there are none.)</p>
+html += sec("Additional Adult Parties", "spouse / domestic partner / adult children / parent / other",
+  `<p class="lede">Leave empty if there are none.</p>
    <div id="parties"></div>
    <button type="button" class="btn-add" id="add-party"><span style="font-size:18px;line-height:1">+</span> Add an adult party</button>`);
 
@@ -749,6 +764,7 @@ document.addEventListener("change", e=>{
   }
   if (t.dataset && t.dataset.sameas){ toggleSameAddress(t.dataset.sameas, t.checked); }
   if (t.dataset && t.dataset.deps){ toggleDepsReveal(t.dataset.deps, t.value); }
+  if (t.dataset && t.dataset.naof){ toggleNA(t); }
   if (t.name && /__[mdy]$/.test(t.name)) updatePreview(t.name.replace(/__[mdy]$/,""));
 });
 document.addEventListener("input", e=>{
@@ -756,6 +772,13 @@ document.addEventListener("input", e=>{
   if (t.dataset && t.dataset.deps){ toggleDepsReveal(t.dataset.deps, t.value); }
   if (t.name && /__[mdy]$/.test(t.name)) updatePreview(t.name.replace(/__[mdy]$/,""));
 });
+
+function toggleNA(cb){
+  const field = document.querySelector(`[name="${cb.dataset.naof}"]`);
+  if(!field) return;
+  if(cb.checked){ field.value=""; field.disabled=true; field.dataset.req="0"; field.classList.remove("invalid"); field.classList.add("na-off"); }
+  else { field.disabled=false; field.dataset.req="1"; field.classList.remove("na-off"); }
+}
 
 function toggleDepsReveal(prefix, val){
   const rev = document.querySelector(`[data-depsreveal="${prefix}"]`);
@@ -960,6 +983,49 @@ function copyText(text){
 function show(id){ document.getElementById(id).classList.add("on"); }
 function hide(id){ document.getElementById(id).classList.remove("on"); }
 
+/* ---------- readable summary (for the notification email) ---------- */
+function prettyVal(v){
+  const m=String(v).match(/^(\d{4})([A-Z][a-z]{2})(\d{2})$/); // YYYYMonDD -> Month DD, YYYY
+  if(m){ const mo=MONTHS.find(x=>x[1]===m[2]); if(mo) return `${mo[0]} ${parseInt(m[3],10)}, ${m[1]}`; }
+  return v;
+}
+function readableLabel(name){
+  const el=root.querySelector(`[name="${name}"]`);
+  if(el&&el.dataset&&el.dataset.label) return el.dataset.label;
+  const fs=root.querySelector(`[data-radio="${name}"],[data-checks="${name}"],[data-date="${name}"]`);
+  if(fs&&fs.dataset&&fs.dataset.label) return fs.dataset.label;
+  return name.replace(/^(Client_|Spouse_|AdditionalParty\d+_|Business\d+_)/,"").replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+}
+function sectionTitleFor(name){
+  let el=root.querySelector(`[name="${name}"]`)
+       ||root.querySelector(`[data-radio="${name}"],[data-checks="${name}"],[data-date="${name}"]`);
+  if(!el){ const m=name.match(/^(AdditionalParty\d+)_/); if(m) el=root.querySelector(`[name^="${m[1]}_"]`); }
+  if(!el) return "Other";
+  let t="Other";
+  const card=el.closest(".card");
+  if(card){ const h=card.querySelector(".card-head h2"); if(h){ const c=h.cloneNode(true); const o=c.querySelector(".opt"); if(o)o.remove(); t=c.textContent.trim(); } }
+  const party=el.closest(".party");
+  if(party){ const pt=party.querySelector(".pt"); if(pt) t=t+" · "+pt.textContent.trim(); }
+  return t;
+}
+function buildReadable(pairs){
+  const order=[], vals={};
+  pairs.forEach(([k,v])=>{ if(k==="_form_version"||k==="_client_id") return; if(!(k in vals)){vals[k]=[];order.push(k);} vals[k].push(v); });
+  const groups=[], gidx={};
+  order.forEach(name=>{
+    let label, value, lookup=name;
+    if(/_None$/.test(name)){ lookup=name.replace(/_None$/,""); label=readableLabel(lookup); value="(none)"; }
+    else if(/_Same_As_Primary$/.test(name)){ label="Residential address"; value="Same as primary client"; }
+    else { label=readableLabel(name); value=vals[name].map(prettyVal).join(", "); }
+    const title=sectionTitleFor(lookup);
+    if(!gidx[title]){ gidx[title]={title,lines:[]}; groups.push(gidx[title]); }
+    gidx[title].lines.push(`${label}: ${value}`);
+  });
+  const out=[`SULLIVAN HART — INTAKE SUBMISSION (${CONFIG.clientId})`,""];
+  groups.forEach(g=>{ out.push(`== ${g.title.toUpperCase()} ==`); g.lines.forEach(l=>out.push(l)); out.push(""); });
+  return out.join("\n").trim();
+}
+
 /* ---------- submit ---------- */
 document.getElementById("btn-submit").addEventListener("click", ()=>{
   const errs = validate();
@@ -974,11 +1040,18 @@ document.getElementById("btn-submit").addEventListener("click", ()=>{
   box.classList.remove("on");
   const pairs = collect();
   const tsv = toTSV(pairs);
-  pairs.push(["_form_version","sh_intake_v3"]); pairs.push(["_client_id",CONFIG.clientId]);
+  const yaml = toYAML(pairs);
+  const readable = buildReadable(pairs);
 
   const ep = (CONFIG.formEndpoint||"").trim();
   if (/^https?:\/\//.test(ep)){
-    const fd=new FormData(); pairs.forEach(([k,v])=>fd.append(k,v));
+    const fd=new FormData();
+    fd.append("Readable_Summary", readable);   // shows first in the email — copy this into Box
+    fd.append("YAML_for_filing", yaml);         // schema draft for Ariel
+    fd.append("Field_Export_TSV", tsv);         // tab-separated, for the YAML pipeline
+    fd.append("_client_id", CONFIG.clientId);
+    fd.append("_form_version", "sh_intake_v3");
+    fd.append("_subject", `Intake submission — ${CONFIG.clientId}`);
     fetch(ep,{method:"POST",body:fd,headers:{"Accept":"application/json"}})
       .then(r=>{ if(r.ok){ doneOnline(); } else { doneFallback(tsv); } })
       .catch(()=> doneFallback(tsv));
@@ -1083,6 +1156,7 @@ function restore(d){
     if(checked){ const rev=document.querySelector(`[data-revealfor="${nm}"]`); if(rev) rev.classList.toggle('on', checked.value==='Yes'); }
   });
   root.querySelectorAll('[data-deps]').forEach(x=> toggleDepsReveal(x.dataset.deps, x.value));
+  root.querySelectorAll('[data-naof]').forEach(cb=> toggleNA(cb));
   root.querySelectorAll('[data-date]').forEach(c=> updatePreview(c.dataset.date));
   return true;
 }
